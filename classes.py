@@ -2,15 +2,16 @@ import pygame as pg
 from random import shuffle, random, choice
 
 class Player:
-    def __init__(self, x: int, y: int, w: int, h: int) -> None:
+    def __init__(self, x: int, y: int, w: int, h: int, uiOffset: int = 0) -> None:
         self.x: int = x
         self.y: int = y
         self.w: int = w
         self.h: int = h
         self.noclip: bool = False
-        self.sprint: bool = True
+        self.sprint: bool = False
+        self.uiOffset: int = uiOffset
 
-        self.mode: int = 5
+        self.mode: int = 0
         self.dir: int = 0
 
         self.img = None
@@ -22,29 +23,29 @@ class Player:
             for x in range(0, self.w * 5, self.w):
                 self.sprites.append(_.subsurface((x, y, self.w, self.h)))
     def draw(self, screen):
-        screen.blit(self.sprites[self.dir + self.mode], (self.x, self.y))
+        screen.blit(self.sprites[self.dir + self.mode], (self.x + self.uiOffset, self.y))
 
     def move(self, event, map: list[list]) -> None:
         x: int = self.x // self.w
         y: int = self.y // self.h
         if event.type == pg.KEYDOWN or (self.sprint and event.type == pg.KEYUP):
-            if event.key in (pg.K_LEFT, pg.K_a) and x > 0 and (map[y][x-1] not in (1,6) or self.noclip):
+            if event.key in (pg.K_a,) and x > 0 and (map[y][x-1] not in (1,6) or self.noclip):
                 self.x -= self.w
                 self.dir = 2
-            elif event.key in (pg.K_RIGHT, pg.K_d) and x < len(map[0]) - 1 and (map[y][x+1] not in (1,6) or self.noclip):
+            elif event.key in (pg.K_d,) and x < len(map[0]) - 1 and (map[y][x+1] not in (1,6) or self.noclip):
                 self.x += self.w
                 self.dir = 1
-            elif event.key in (pg.K_UP, pg.K_w) and y > 0 and (map[y-1][x] not in (1,6) or self.noclip):
+            elif event.key in (pg.K_w,) and y > 0 and (map[y-1][x] not in (1,6) or self.noclip):
                 self.y -= self.h
                 self.dir = 3
-            elif event.key in (pg.K_DOWN, pg.K_s) and y < len(map) - 1 and (map[y+1][x] not in (1,6) or self.noclip):
+            elif event.key in (pg.K_s,) and y < len(map) - 1 and (map[y+1][x] not in (1,6) or self.noclip):
                 self.y += self.h
                 self.dir = 4
     def applyPotion(self) -> None:
         pass
 
 class Maze:
-    def __init__(self, columns: int, rows: int, screen, clock) -> None:
+    def __init__(self, columns: int, rows: int, screen, clock, uiOffset: int = 0) -> None:
         self.c: int = columns
         self.r: int = rows
         self.array: list[list] = [[1 for _ in range(columns)] for _ in range(rows)]
@@ -52,6 +53,7 @@ class Maze:
         self.wallSprite = None
         self.directionMap: list[list] = []
         self.sprites: list[pg.Surface] = []
+        self.uiOffset = uiOffset
         self.wallMap: list[list] = [[0 for _ in range(columns)] for _ in range(rows)]
         self.clock = clock
         self.screen = screen
@@ -86,15 +88,12 @@ class Maze:
 
     def draw(self, screen = None):
         '''Draws the maze on the screen using 16 wall sprites'''
+        w = self.sprites[0].get_width()
         if screen is None: screen = self.screen
         for r in range(self.r):
             for c in range(self.c):
                 if self.array[r][c] == 1:
-                    screen.blit(self.sprites[self.wallMap[r][c]], (c * self.sprites[0].width, r * self.sprites[0].height))
-                # if (r, c) in self.staticPoints:
-                #     pg.draw.rect(screen, (200, 200, 200), (c * self.sprites[0].width, r * self.sprites[0].height, self.sprites[0].width, self.sprites[0].height))
-                # if (r, c) == self.origin:
-                #     pg.draw.rect(screen, (200, 200, 200), (c * self.wallSprite.width, r * self.wallSprite.height, self.wallSprite.width, self.wallSprite.height))
+                    screen.blit(self.sprites[self.wallMap[r][c]], (c * w + self.uiOffset, r * w))
 
         # Worst 20 lines of code, but I couldn't think of a more optimal solution
         # For every sprite rotation, the sprite gets weirdly offset and specific values (such as 1/16) have to be used for each case to correct placement
@@ -120,8 +119,8 @@ class Maze:
             elif valve[5] == 90:
                 d = 1 / 16
 
-            screen.blit(pg.transform.rotate(self.valveSprites[i], valve[2]),(self.valveW * (valve[1] - a), self.valveW * (valve[0] - b)))
-            screen.blit(pg.transform.rotate(self.valveSprites[j], valve[5]),(self.valveW * (valve[4] - c), self.valveW * (valve[3] - d)))
+            screen.blit(pg.transform.rotate(self.valveSprites[i], valve[2]),(self.valveW * (valve[1] - a) + self.uiOffset, self.valveW * (valve[0] - b)))
+            screen.blit(pg.transform.rotate(self.valveSprites[j], valve[5]),(self.valveW * (valve[4] - c) + self.uiOffset, self.valveW * (valve[3] - d)))
 
     def getOffsets(self, coords: tuple[int, int]) -> list[tuple[int, int]]:
         '''Only called by other functions'''
@@ -165,6 +164,7 @@ class Maze:
     def generateMaze(self, coords: tuple[int, int] = (0,0), loopChance: float = 0, visualise: bool = False) -> None:
         '''Maze generation using Stack-Based Depth First Search Algorithm (no risk of recursion overflow for large mazes).'''
         self.reset()
+        w: int = self.sprites[0].get_width()
         stack: list[tuple[int, int, int, int]] = []
         stack.append(coords + coords)
         while len(stack) > 0:
@@ -182,46 +182,10 @@ class Maze:
                 self.screen.fill("#AAAAAA")
                 self.generateWallMap()
                 self.draw(self.screen)
-                pg.draw.rect(self.screen, "#FFFFFF", (point[1] * self.sprites[0].width, point[0] * self.sprites[0].height, self.sprites[0].width, self.sprites[0].height))
+                pg.draw.rect(self.screen, "#FFFFFF", (point[1] * w + self.uiOffset, point[0] * w, w, w))
                 self.clock.tick(30)
                 pg.display.flip()
-        self.shiftMaze(int(self.r * 1.3), visualise)
-
-    def generateDirectionMap(self, point: tuple[int, int]):
-        '''Uses BFS to generate a direction map. The map is used for Origin Shift'''
-        self.origin = point
-        self.directionMap = [[(-1, -1) for _ in range(self.c)] for _ in range(self.r)]
-        stack: list[tuple[int, int, tuple[int, int]]] = [(point[0], point[1], (0,0))]
-        while len(stack) > 0:
-            temp = stack[0]
-            stack.pop(0)
-            self.directionMap[temp[0]][temp[1]] = temp[2]
-            for offset in self.getOffsets((temp[0], temp[1])):
-                new: tuple[int, int] = (temp[0] + offset[0], temp[1] + offset[1])
-                if new == point or self.directionMap[new[0]][new[1]] != (-1, -1) or self.array[temp[0] + offset[0] // 2][temp[1] + offset[1] // 2] == 1: continue
-                stack.append((new[0], new[1], (-offset[0], -offset[1])))
-    def shiftMaze(self, count:int, visualise: bool = False):
-        '''Changes something small about the maze 'count' times
-        Uses an algorithm known as 'Origin Shift', invented by Minecraft YouTuber CaptainLuma'''
-        for _ in range(count):
-            origin: tuple[int,int] = choice(self.staticPoints)
-            self.generateDirectionMap(origin)
-            offset: tuple[int, int] = choice(self.getOffsets(origin))
-            newOrigin: tuple[int, int] = (origin[0] + offset[0], origin[1] + offset[1])
-            newOffset: tuple[int, int] = self.directionMap[newOrigin[0]][newOrigin[1]]
-            # print(f"Og origin: {origin} -> {newOrigin}. ({offset}).\nClearing at ({(origin[0] + offset[0] // 2, origin[1] + offset[1] // 2)})\nPlacing wall at ({(newOrigin[0] + newOffset[0] // 2, newOrigin[1] + newOffset[1] // 2)})")
-            self.array[newOrigin[0] + newOffset[0] // 2][newOrigin[1] + newOffset[1] // 2] = 1
-            self.array[origin[0] + offset[0] // 2][origin[1] + offset[1] // 2] = 0
-            self.directionMap[origin[0]][origin[1]] = offset
-            self.directionMap[newOrigin[0]][newOrigin[1]] = (0,0)
-            self.origin = newOrigin
-            if visualise:
-                self.screen.fill("#BBBBBB")
-                self.generateWallMap()
-                self.draw(self.screen)
-                self.clock.tick(count * 2)
-                pg.display.flip()
-        self.generateWallMap()
+        #self.shiftMaze(int(self.r * 1.3), visualise)
 
     def getDirection(self, point: tuple[int, int], target: tuple[int, int]) -> tuple[int, int]:
         '''Gets the direction from one point to the other. Useful for knowing where to place valves. Uses DFS'''
@@ -283,9 +247,8 @@ class Maze:
             self.array[valve[3]][valve[4]] %= 2
             self.array[valve[3]][valve[4]] += 5
 
-
 class SapphireManager:
-    def __init__(self, count: int, maze: Maze):
+    def __init__(self, count: int, maze: Maze, uiOffset: int = 0):
         self.count: int = count
         self.tempCount: int = count
         self.score = 0
@@ -293,6 +256,7 @@ class SapphireManager:
         self.sapphires: list[tuple[int, int]] = []
         self.sprite: pg.Surface
         self.refillSprite: pg.Surface
+        self.uiOffset: int = uiOffset
         self.refills: list[tuple[int, int]] = [(maze.r - 1, maze.c - 1), (0,0), (0, maze.c - 1), (maze.r - 1, 0)]
         self.i = 0 # Which corner to spawn the new refill in
         self.maze.array[self.refills[self.i][0]][self.refills[self.i][1]] = 4
@@ -308,11 +272,11 @@ class SapphireManager:
         self.sfx1.set_volume(0.5)
         self.sfx2 = pg.mixer.Sound(sfx2)
     def draw(self, screen):
-        size: int = self.sprite.width
+        size: int = self.sprite.get_width()
         for s in self.sapphires:
-            screen.blit(self.sprite, (s[1] * size, s[0] * size))
+            screen.blit(self.sprite, (s[1] * size + self.uiOffset, s[0] * size))
         if self.maze.array[self.refills[self.i][0]][self.refills[self.i][1]] == 4:
-            screen.blit(self.refillSprite, (self.refills[self.i][1] * size, self.refills[self.i][0] * size))
+            screen.blit(self.refillSprite, (self.refills[self.i][1] * size + self.uiOffset, self.refills[self.i][0] * size))
 
     def place(self, player: Player, count = None):
         '''Places some amount of sapphires in the maze.
@@ -356,14 +320,15 @@ class SapphireManager:
             self.sapphires.remove((y, x))
             self.maze.array[y][x] = 0
             #self.maze.shiftMaze(2)
-            self.maze.flipValves(len(self.maze.valves) - 3)
-            self.score += 1
+            self.maze.flipValves(max(len(self.maze.valves) - 3, 1))
             self.tempCount -= 1
         if self.maze.array[y][x] == 4 and self.tempCount < 1:
             self.maze.array[y][x] = 0
-            if self.score // self.count == maxRefills:
+            if self.score > maxRefills - 2:
+                self.score += 1
                 return True
             else:
+                self.score += 1
                 self.sfx2.play()
                 self.i = (self.i + 1) % 4
                 self.maze.array[self.refills[self.i][0]][self.refills[self.i][1]] = 4
@@ -371,3 +336,43 @@ class SapphireManager:
                 self.maze.flipValves(len(self.maze.valves) - 2)
                 self.place(player)
         return False
+
+class UI:
+    def __init__(self, screen, level: int, offset: int, itemsSource: str):
+        self.level = level
+        self.offset = offset
+        self.screen = screen
+        self.font = pg.font.SysFont("freesans", 60)
+        self.heart = pg.transform.scale(pg.image.load(itemsSource).subsurface((32,0,16,16)), (offset, offset))
+    def draw(self, num: int):
+        '''Draws the UI (sidebars, text).'''
+        # This took a long time to figure out and this code is pretty messy (especially calculating text height)
+        screenHeight: int = self.screen.get_height()
+        screenWidth: int = self.screen.get_width()
+        textHeight: int = self.font.get_height()
+        pg.draw.rect(self.screen, "#4f4f4f", (0,0, self.offset, screenHeight))
+        pg.draw.rect(self.screen, "#4f4f4f", (screenWidth - self.offset, 0, self.offset, screenHeight))
+        # pg.draw.line(self.screen, "#000000", (self.offset - 10, 0), (self.offset - 10, screenHeight), 10)
+        # pg.draw.line(self.screen, "#000000", (screenWidth - self.offset, 0), (screenWidth - self.offset, screenHeight), 10)
+        text: str = f"LEVEL {self.level}"
+        h: int = screenHeight // 2  - (len(text)) * textHeight // 2
+        for char in text:
+            t = self.font.render(char, True, "#FFFFFF")
+            self.screen.blit(t,(self.offset // 2 - t.get_width() // 2,h))
+            h += textHeight
+
+        text = f"{num}-4"
+        h = screenHeight // 2  - (len(text)) * textHeight // 2
+        for char in text:
+            if char == "-":
+                t = self.font.render("--", True, "#FFFFFF")
+            else:
+                t = self.font.render(char, True, "#FFFFFF")
+            self.screen.blit(t, (screenWidth - self.offset // 2 - t.get_width() // 2, h))
+            h += textHeight
+        self.screen.blit(self.heart, (screenWidth - self.offset, 0))
+        self.screen.blit(self.heart, (screenWidth - self.offset, self.offset))
+        self.screen.blit(self.heart, (screenWidth - self.offset, self.offset * 2))
+
+
+
