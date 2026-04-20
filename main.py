@@ -1,6 +1,6 @@
 import random
 from random import choice, random
-from classes import Player, Maze, SapphireManager, UI
+from classes import Player, Maze, SapphireManager, UI, SpikeManager
 import pygame as pg
 
 pg.init()
@@ -11,11 +11,11 @@ rows: int = 13
 columns: int = 13
 
 d: int = min(pg.display.get_desktop_sizes()[0])
-
-cellSize: int = (d-150) // max(rows, columns)
+print(pg.display.get_desktop_sizes()[0])
+cellSize: int = (d-50) // max(rows, columns)
 cellSize -= cellSize % 16  # in pixels
 print(cellSize)
-uiOffset: int = 100
+uiOffset: int = 50
 
 dimensions: tuple[int, int] = (cellSize * columns + uiOffset * 2, cellSize * rows)
 
@@ -45,9 +45,12 @@ sapphires = SapphireManager(3 + (rows * columns > 169), maze, uiOffset)
 sapphires.loadAssets("sprites/items.png", cellSize, "sfx/coin.wav", "sfx/refill.wav")
 sapphires.place(player)
 
+spikes = SpikeManager(3, maze, uiOffset)
+spikes.loadAssets("sprites/spikes.png", cellSize)
+spikes.place(3)
+
 pg.mixer.Sound("sfx/refill.wav").play()
 maze.printMaze()
-
 run: bool = True
 status: bool = False
 
@@ -64,9 +67,10 @@ while run:
         clearSfx.play()
         level += 1
 
-    ui.draw(sapphires.score)
+    ui.draw(sapphires.score, player.health)
     screen.blit(bgImg, (uiOffset, 0))
     sapphires.draw(screen)
+    spikes.draw(screen)
     maze.draw()
     player.draw(screen)
 
