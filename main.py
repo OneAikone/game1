@@ -1,6 +1,6 @@
 import random
 from random import choice, random
-from classes import Player, Maze, SapphireManager, UI, SpikeManager
+from classes import Player, Maze, SapphireManager, UI, SpikeManager, PotionManager
 import pygame as pg
 from copy import deepcopy
 
@@ -8,12 +8,14 @@ pg.mixer.init()
 pg.init()
 
 clearSfx = pg.mixer.Sound("sfx/clear.wav")
-deathSfx = pg.mixer.Sound("sfx/death.ogg")
+deathSfx = pg.mixer.Sound("sfx/death.mp3")
 startSfx = pg.mixer.Sound("sfx/start.wav")
+
 
 # Cleaner way to load images
 def loadImage(source: str, width: int, height: int) -> pg.Surface:
     return pg.transform.scale(pg.image.load(source), (width, height))
+
 
 def levelEasy() -> bool:
     rows: int = 11
@@ -30,7 +32,6 @@ def levelEasy() -> bool:
         cellSize: int = int(d * 0.9) // rows
         cellSize -= cellSize % 16  # in pixels
         print(cellSize)
-
 
     screen = pg.display.set_mode((cellSize * rows + uiOffset * 2, cellSize * rows))
     pg.display.set_caption("Amaze!")
@@ -70,7 +71,7 @@ def levelEasy() -> bool:
             if event.type == pg.QUIT or (event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE):
                 return True
 
-        status = sapphiresEasy.detectPickup(playerEasy, 4)
+        status = sapphiresEasy.detectPickup(playerEasy, 1)
         playerEasy.checkCollision(mazeEasy.array)
 
         screen.blit(bgImg, (uiOffset, 0))
@@ -82,15 +83,14 @@ def levelEasy() -> bool:
 
         if playerEasy.health == 0:
             pg.display.flip()
-            clock.tick(2)
             deathSfx.play()
-            clock.tick(1)
+            clock.tick(0.4)
             mazeEasy.deathAnim()
             clock.tick(0.5)
             return False
 
         if status:
-            clearSfx.play() 
+            clearSfx.play()
             pg.display.flip()
             clock.tick(1)
             mazeEasy.clearAnim()
@@ -99,6 +99,7 @@ def levelEasy() -> bool:
 
         pg.display.flip()
         clock.tick(60)
+
 
 def levelMedium() -> bool:
     rows: int = 15
@@ -134,7 +135,7 @@ def levelMedium() -> bool:
     sapphiresMedium = SapphireManager(4, mazeMedium, uiOffset)
 
     spikesMedium = SpikeManager(4, mazeMedium)
-    spikesMedium.loadAssets("sprites/spikes.png", cellSize, uiOffset)
+    spikesMedium.loadAssets("sprites/spikes.png", cellSize, uiOffset, "sfx/spike1.wav", "sfx/spike2.wav")
     spikesMedium.place()
 
     sapphiresMedium.loadAssets("sprites/items.png", cellSize, "sfx/coin.wav", "sfx/score.wav")
@@ -143,7 +144,6 @@ def levelMedium() -> bool:
     mazeMedium.printMaze()
     ui.draw(0, 3)
     playerMedium.draw(screen)
-    mazeMedium.loadAnim(bgImg, cellSize)
     for i in range(rows - 1, -1, -1):
         sapphiresMedium.draw(screen, i)
         if i == 0: playerMedium.draw(screen)
@@ -166,7 +166,7 @@ def levelMedium() -> bool:
         screen.blit(bgImg, (uiOffset, 0))
         sapphiresMedium.draw(screen)
         playerMedium.draw(screen)
-        spikesMedium.flip(screen)
+        spikesMedium.flip(screen, playerMedium)
         spikesMedium.draw(screen)
         mazeMedium.draw(screen)
 
@@ -174,9 +174,8 @@ def levelMedium() -> bool:
 
         if playerMedium.health == 0:
             pg.display.flip()
-            clock.tick(2)
             deathSfx.play()
-            clock.tick(1)
+            clock.tick(0.4)
             mazeMedium.deathAnim()
             clock.tick(0.5)
             return False
@@ -190,14 +189,15 @@ def levelMedium() -> bool:
         pg.display.flip()
         clock.tick(60)
 
+
 def levelHard() -> bool:
-    rows: int = 21
+    rows: int = 19
     cellSize: int = 48
     uiOffset: int = 75
     fontSize: int = 40
     if pg.display.get_desktop_sizes()[0] == (1280, 720):
         cellSize = 32
-        uiOffset = 50
+        uiOffset = 40
         fontSize = 25
     elif pg.display.get_desktop_sizes()[0] != (1920, 1080):
         d: int = min(pg.display.get_desktop_sizes()[0])
@@ -219,21 +219,24 @@ def levelHard() -> bool:
     mazeHard: Maze = Maze(rows, rows)
     mazeHard.loadAssets("sprites/walls.png", cellSize, "sprites/valves.png", screen, clock, uiOffset)
     mazeHard.generateMaze(choice(mazeHard.staticPoints))
-    mazeHard.placeValves(7)
+    mazeHard.placeValves(6)
 
     sapphiresHard = SapphireManager(5, mazeHard, uiOffset)
 
-    spikesHard = SpikeManager(7, mazeHard)
-    spikesHard.loadAssets("sprites/spikes.png", cellSize, uiOffset)
+    spikesHard = SpikeManager(6, mazeHard)
+    spikesHard.loadAssets("sprites/spikes.png", cellSize, uiOffset, "sfx/spike1.wav", "sfx/spike2.wav")
     spikesHard.place()
 
-    sapphiresHard.loadAssets("sprites/items.png", cellSize, "sfx/coin.wav", "sfx/score.wav")
+    sapphiresHard.loadAssets("sprites/items.png", cellSize, "sfx/coin.wav", "sfx/coin2.mp3", "sfx/score.wav")
     sapphiresHard.place(playerHard)
+
+    potionsHard = PotionManager(mazeHard, uiOffset)
+    potionsHard.loadAssets("sprites/items.png", cellSize, "sfx/potion.wav")
 
     mazeHard.printMaze()
     ui.draw(0, 3)
     playerHard.draw(screen)
-    mazeHard.loadAnim(bgImg, cellSize)
+    screen.blit(bgImg, (uiOffset, 0))
     for i in range(rows - 1, -1, -1):
         sapphiresHard.draw(screen, i)
         if i == 0: playerHard.draw(screen)
@@ -250,41 +253,35 @@ def levelHard() -> bool:
             if event.type == pg.QUIT or (event.type == pg.KEYDOWN and event.key == pg.K_ESCAPE):
                 return True
 
-        status = sapphiresHard.detectPickup(playerHard, 1)
+        status = sapphiresHard.detectPickup(playerHard, 4)
         playerHard.checkCollision(mazeHard.array)
 
         screen.blit(bgImg, (uiOffset, 0))
         sapphiresHard.draw(screen)
-        playerHard.draw(screen)
-        spikesHard.flip(screen)
-        spikesHard.draw(screen)
         mazeHard.draw(screen)
-
-        ui.draw(sapphiresHard.score, playerHard.health)
+        playerHard.draw(screen)
+        spikesHard.flip(screen, playerHard)
+        spikesHard.draw(screen)
+        potionsHard.draw(screen)
+        potionsHard.place(playerHard, 2, 0.3, 1/1000)
+        potionsHard.detectPickup(playerHard)
+        ui.draw(sapphiresHard.score, playerHard.health, (playerHard.sprintTimer, playerHard.noclipTimer))
 
         if playerHard.health == 0:
             pg.display.flip()
-            clock.tick(2)
             deathSfx.play()
-            clock.tick(1)
+            clock.tick(0.4)
             mazeHard.deathAnim()
-            clock.tick(0.5)
+            clock.tick(1)
             return False
 
         if status:
             clearSfx.play()
             mazeHard.clearAnim()
-            clock.tick(1)
+            clock.tick(0.7)
             return False
 
         pg.display.flip()
         clock.tick(60)
 
-levelEasy()
-pg.quit()
-pg.init()
-levelMedium()
-pg.quit()
-pg.init()
 levelHard()
-

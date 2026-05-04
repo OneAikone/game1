@@ -1,6 +1,8 @@
 import pygame as pg
 from random import shuffle, random, choice
 
+def distance(x, y) -> float:
+    return pow(x*x + y*y, 0.5)
 
 class Player:
     def __init__(self, x: int, y: int, w: int, h: int, uiOffset: int = 0) -> None:
@@ -11,6 +13,8 @@ class Player:
         self.health: int = 3
         self.noclip: bool = False
         self.sprint: bool = True
+        self.noclipTimer: int = 0
+        self.sprintTimer: int = 0
         self.uiOffset: int = uiOffset
         self.hurt = False
 
@@ -28,7 +32,6 @@ class Player:
                 self.sprites.append(_.subsurface((x, y, self.w, self.h)))
         self.damageSfx = pg.mixer.Sound(sfxSource)
         self.damageSfx.set_volume(2)
-
 
     def draw(self, screen):
         screen.blit(self.sprites[self.dir + self.mode], (self.x + self.uiOffset, self.y))
@@ -60,8 +63,32 @@ class Player:
         elif map[y][x] != 8 and self.hurt is True:
             self.hurt = False
 
-    def applyPotion(self) -> None:
-        pass
+        if self.sprintTimer > 0:
+            self.sprintTimer -= 1
+        if self.noclipTimer > 0:
+            self.noclipTimer -= 1
+
+        if self.sprintTimer == 0 and self.sprint:
+            self.sprint = False
+            self.mode = 0
+            if self.noclip:
+                self.mode = 10
+        if self.noclipTimer == 0 and self.noclip:
+            self.noclip = False
+            self.mode = 0
+            if self.sprint:
+                self.mode = 5
+
+    def applyPotion(self, type: int) -> None:
+        if type == 0:
+            self.sprintTimer = 60 * 15
+            if not self.noclip:
+                self.mode = 5
+            self.sprint = True
+        if type == 1:
+            self.noclipTimer = 60 * 5
+            self.mode = 10
+            self.noclip = True
 
 
 class Maze:
@@ -117,7 +144,7 @@ class Maze:
 
     def clearAnim(self):
         w: float = self.sprites[0].get_width() * self.c / 11
-        coords: list[tuple[int, int]] = [(i,j) for i in range(16) for j in range(11)]
+        coords: list[tuple[int, int]] = [(i, j) for i in range(16) for j in range(11)]
 
         for i in range(len(coords)):
             r, c = coords[i]
@@ -134,17 +161,17 @@ class Maze:
             self.clock.tick(60)
             pg.display.flip()
 
-    def loadAnim(self, bgImg: pg.Surface, w:int):
+    def loadAnim(self, bgImg: pg.Surface, w: int):
         for a in range(self.c - 1, -1, -1):
             for b in range(self.r - 2, -1, -1):
                 self.screen.blit(bgImg, (self.uiOffset, 0))
                 for x in range(self.c):
                     found = False
                     for y in range(self.r):
-                        if (x,y) == (a,b):
+                        if (x, y) == (a, b):
                             found = ~found
                             break
-                        pg.draw.rect(self.screen, "#FFFFFF", (x*w + self.uiOffset, y*w, w, w))
+                        pg.draw.rect(self.screen, "#FFFFFF", (x * w + self.uiOffset, y * w, w, w))
                     if found: break
                 self.clock.tick((self.r - 1) * self.c // 1.5)
                 pg.display.flip()
@@ -152,47 +179,13 @@ class Maze:
 
     def deathAnim(self):
         w = self.sprites[0].get_width()
-        coords: list[tuple[int, int]] = [(self.r // 2, self.c // 2)]
-        dy: int = -1
-        dx: int = -1
-        temp: int = 1
-        while coords[-1][0] >= 0 and coords[-1][1] >= 0:
-            for i in range(abs(dy)):
-                coords.append((coords[-1][0] + (dy // abs(dy)), coords[-1][1]))
-            dy *= -1
-            temp += 1
-            if temp == 3:
-                temp = 1
-                if dx > 0:
-                    dx += 1
-                else:
-                    dx -= 1
-                if dy > 0:
-                    dy += 1
-                else:
-                    dy -= 1
-            for i in range(abs(dx)):
-                coords.append((coords[-1][0], coords[-1][1] + (dx // abs(dx))))
-            dx *= -1
-            temp += 1
-            if temp == 3:
-                temp = 1
-                if dx > 0:
-                    dx += 1
-                else:
-                    dx -= 1
-                if dy > 0:
-                    dy += 1
-                else:
-                    dy -= 1
-        coords = coords[::-1]
-        for i in range(len(coords)):
-            r, c = coords[i]
-            pg.draw.rect(self.screen, "#000000", (c * w + self.uiOffset, r * w, w, w))
-            self.clock.tick(len(coords) // 6)
+        coords: list[tuple[int, int]] = [(i,j) for i in range(6) for j in range(6)]
+        w = self.c * w / 6
+        shuffle(coords)
+        for x,y in coords:
+            pg.draw.rect(self.screen, "#000000", (x * w + self.uiOffset, y * w, w, w))
             pg.display.flip()
-        self.clock.tick(0.5)
-
+            self.clock.tick(30)
 
     def draw(self, screen=None, up_to: int = -1):
         '''Draws the maze on the screen using 16 wall sprites'''
@@ -228,9 +221,11 @@ class Maze:
                 d = 1 / 16
 
             if valve[0] > up_to:
-                screen.blit(pg.transform.rotate(self.valveSprites[i], valve[2]), (self.valveW * (valve[1] - a) + self.uiOffset, self.valveW * (valve[0] - b)))
+                screen.blit(pg.transform.rotate(self.valveSprites[i], valve[2]),
+                            (self.valveW * (valve[1] - a) + self.uiOffset, self.valveW * (valve[0] - b)))
             if valve[3] > up_to:
-                screen.blit(pg.transform.rotate(self.valveSprites[j], valve[5]), (self.valveW * (valve[4] - c) + self.uiOffset, self.valveW * (valve[3] - d)))
+                screen.blit(pg.transform.rotate(self.valveSprites[j], valve[5]),
+                            (self.valveW * (valve[4] - c) + self.uiOffset, self.valveW * (valve[3] - d)))
 
     def getOffsets(self, coords: tuple[int, int]) -> list[tuple[int, int]]:
         '''Only called by other functions'''
@@ -276,8 +271,7 @@ class Maze:
     def generateMaze(self, coords: tuple[int, int] = (0, 0), visualise: bool = False) -> None:
         '''Maze generation using Stack-Based Depth First Search Algorithm (no risk of recursion overflow for large mazes).'''
         self.reset()
-        stack: list[tuple[int, int, int, int]] = []
-        stack.append(coords + coords)
+        stack: list[tuple[int, int, int, int]] = [coords + coords]
         while len(stack) > 0:
             point: tuple[int, int, int, int] = stack[-1]
             stack.pop()
@@ -312,10 +306,10 @@ class Maze:
                 p: tuple[int, int] = stack[-1]
                 stack.pop()
                 if p == target:
-                    return ((branch[0] + point[0]) // 2, (branch[1] + point[1]) // 2)
+                    return (branch[0] + point[0]) // 2, (branch[1] + point[1]) // 2
                 visited[p[0]][p[1]] = True
-                for offset in self.getOffsets(p):
-                    new: tuple[int, int] = (p[0] + offset[0], p[1] + offset[1])
+                for newOffset in self.getOffsets(p):
+                    new: tuple[int, int] = (p[0] + newOffset[0], p[1] + newOffset[1])
                     if visited[new[0]][new[1]] == False and self.array[(p[0] + new[0]) // 2][
                         (p[1] + new[1]) // 2] not in (1, 5, 6):
                         stack.append(new)
@@ -362,40 +356,45 @@ class Maze:
             self.array[valve[3]][valve[4]] %= 2
             self.array[valve[3]][valve[4]] += 5
 
+mazeCorners: list[tuple[int, int]] = []
 
 class SapphireManager:
     def __init__(self, count: int, maze: Maze, uiOffset: int = 0):
+        global mazeCorners
         self.count: int = count
         self.tempCount: int = count
         self.score = 0
         self.maze: Maze = maze
         self.sapphires: list[tuple[int, int]] = []
-        self.sprite: pg.Surface
-        self.refillSprite: pg.Surface
+        self.sprite = None
+        self.refillSprite = None
         self.uiOffset: int = uiOffset
-        self.refills: list[tuple[int, int]] = [(maze.r - 1, maze.c - 1), (0, 0), (0, maze.c - 1), (maze.r - 1, 0)]
+        mazeCorners = [(maze.r - 1, maze.c - 1), (0, 0), (0, maze.c - 1), (maze.r - 1, 0)]
         self.i = 0  # Which corner to spawn the new refill in
-        self.maze.array[self.refills[self.i][0]][self.refills[self.i][1]] = 4
+        self.maze.array[mazeCorners[self.i][0]][mazeCorners[self.i][1]] = 4
         self.sfx1 = None
         self.sfx2 = None
+        self.sfx3 = None
 
-    def loadAssets(self, spriteSource: str, size: int, sfx1: str, sfx2: str):
+    def loadAssets(self, spriteSource: str, size: int, sfx1: str, sfx2: str, sfx3: str):
         '''Loads the sapphire and refill point sprites.'''
-        image = pg.transform.scale(pg.image.load(spriteSource), (5 * size, size))
+        image = pg.transform.scale(pg.image.load(spriteSource), (6 * size, size))
         self.sprite = image.subsurface((size * 3, 0, size, size))
         self.refillSprite = image.subsurface((size * 4, 0, size, size))
         self.sfx1 = pg.mixer.Sound(sfx1)
         self.sfx1.set_volume(0.5)
         self.sfx2 = pg.mixer.Sound(sfx2)
+        self.sfx3 = pg.mixer.Sound(sfx3)
 
     def draw(self, screen, up_to: int = -1):
         size: int = self.sprite.get_width()
         for s in self.sapphires:
             if s[0] <= up_to: continue
             screen.blit(self.sprite, (s[1] * size + self.uiOffset, s[0] * size))
-        if self.maze.array[self.refills[self.i][0]][self.refills[self.i][1]] == 4 and self.refills[self.i][1] > up_to:
+        if self.tempCount == 0 and self.maze.array[mazeCorners[self.i][0]][mazeCorners[self.i][1]] == 4 and \
+                mazeCorners[self.i][1] > up_to:
             screen.blit(self.refillSprite,
-                        (self.refills[self.i][1] * size + self.uiOffset, self.refills[self.i][0] * size))
+                        (mazeCorners[self.i][1] * size + self.uiOffset, mazeCorners[self.i][0] * size))
 
     def place(self, player: Player, count=None):
         '''Places some amount of sapphires in the maze.
@@ -441,12 +440,14 @@ class SapphireManager:
         x: int = player.x // player.w
         y: int = player.y // player.h
         if self.maze.array[y][x] == 3:
-            self.sfx1.play()
             self.sapphires.remove((y, x))
             self.maze.array[y][x] = 0
             # self.maze.shiftMaze(2)
             self.maze.flipValves(max(len(self.maze.valves) - 3, 1))
             self.tempCount -= 1
+            self.sfx1.play()
+            if self.tempCount <= 0:
+                self.sfx2.play()
         if self.maze.array[y][x] == 4 and self.tempCount < 1:
             self.maze.array[y][x] = 0
             if self.score > maxRefills - 2:
@@ -454,13 +455,14 @@ class SapphireManager:
                 return True
             else:
                 self.score += 1
-                self.sfx2.play()
+                self.sfx3.play()
                 self.i = (self.i + 1) % 4
-                self.maze.array[self.refills[self.i][0]][self.refills[self.i][1]] = 4
+                self.maze.array[mazeCorners[self.i][0]][mazeCorners[self.i][1]] = 4
                 self.tempCount = self.count
                 self.maze.flipValves(len(self.maze.valves) - 2)
                 self.place(player)
         return False
+
 
 class SpikeManager:
     def __init__(self, count: int, maze: Maze) -> None:
@@ -476,11 +478,17 @@ class SpikeManager:
         self.delays: list[int] = []
         self.useExtended = False
 
-    def loadAssets(self, spikeSource: str, size: int, uiOffset: int):
+        self.sfxs: list = []
+
+    def loadAssets(self, spikeSource: str, size: int, uiOffset: int, sfx1: str, sfx2: str):
         self.size = size
         self.offset = uiOffset
         for x in (0, 16):
             self.sprites.append(pg.transform.scale(pg.image.load(spikeSource).subsurface((x, 0, 16, 16)), (size, size)))
+        self.sfxs.append(pg.mixer.Sound(sfx1))
+        self.sfxs.append(pg.mixer.Sound(sfx2))
+        for sfx in self.sfxs:
+            sfx.set_volume(0.05)
 
     def draw(self, screen, up_to: int = -1):
         for spike in self.spikes:
@@ -521,22 +529,22 @@ class SpikeManager:
         # Scan the board for possible placements
         for y in range(-1, self.maze.r - 2, 2):
             for x in range(1, self.maze.c, 2):
-                if (x, y) == (0, 0): continue
                 shuffle(mods)
                 for mod in mods:
                     if self.maze.array[y + 1][x] == 1 and self.maze.array[y + 3][x] == 1 and self.maze.array[y + 1][
-                        x + mod] == 0 and self.maze.array[y + 2][x + mod] == 0 and self.maze.array[y + 3][x + mod] == 0:
+                        x + mod] == 0 and self.maze.array[y + 2][x + mod] == 0 and self.maze.array[y + 3][x + mod] == 0 and (y + 1,x + mod) not in mazeCorners and (y + 3, x + mod) not in mazeCorners:
                         points.append([y + 1, x + mod, y + 3, x + mod, (-90 if mod == -1 else 90)])
         for y in range(1, self.maze.r, 2):
             for x in range(-1, self.maze.c - 2, 2):
-                if (x, y) == (0, 0): continue
                 shuffle(mods)
                 for mod in mods:
                     if (self.maze.array[y][x + 1] == 1 and
                             self.maze.array[y][x + 3] == 1 and
                             self.maze.array[y + mod][x + 1] == 0 and
                             self.maze.array[y + mod][x + 2] == 0 and
-                            self.maze.array[y + mod][x+ 3] == 0):
+                            self.maze.array[y + mod][x + 3] == 0 and
+                            (y + mod, x + 1) not in mazeCorners and
+                            (y + mod, x + 3) not in mazeCorners):
                         points.append([y + mod, x + 1, y + mod, x + 3, (0 if mod == 1 else 180)])
         shuffle(points)
         i: int = -1
@@ -546,7 +554,7 @@ class SpikeManager:
             if i >= len(points): break
             point: list[int] = points[i]
             if self.maze.array[point[0]][point[1]] != 0 or self.maze.array[point[2]][point[3]] != 0: continue
-            if (point[0], point[1]) == (0,0): continue
+            if (point[0], point[1]) == (0, 0): continue
             self.maze.array[point[0]][point[1]] = 7
             self.maze.array[point[2]][point[3]] = 7
             self.maze.array[(point[0] + point[2]) // 2][(point[1] + point[3]) // 2] = 7
@@ -559,28 +567,103 @@ class SpikeManager:
             delay: int = choice(range(0, self.period))
             self.delays.append(delay)
 
-    def flip(self, screen):
+    def flip(self, screen, player: Player, useSound: bool = True):
         self.ticks += 1
         self.ticks %= self.period
+        x: int = player.x // player.w
+        y: int = player.y // player.h
         # print(self.ticks, self.delays)
         for i in range(len(self.delays)):
+            dy: int = max(7 - abs(self.spikes[i][0] - y), 0)
+            dx: int = max(7 - abs(self.spikes[i][1] - x), 0)
             extendedTicks: int = self.ticks + self.period
             value: int = self.delays[i]
             if self.ticks == value:
                 self.maze.array[self.spikes[i][0]][self.spikes[i][1]] %= 2
                 self.maze.array[self.spikes[i][0]][self.spikes[i][1]] += 7
-            elif self.ticks == value + 15 or extendedTicks == value + 15 and self.useExtended:
+                if dx > 0 and dy > 0 and useSound:
+                    sfx = choice(self.sfxs)
+                    sfx.set_volume(distance(dx, dy) * 0.1)
+                    sfx.play()
+            dy = max(7 - abs((self.spikes[i][2] + self.spikes[i][0]) // 2 - y), 0)
+            dx = max(7 - abs((self.spikes[i][3] + self.spikes[i][1]) // 2 - x), 0)
+            if self.ticks == value + 15 or extendedTicks == value + 15 and self.useExtended:
                 self.maze.array[(self.spikes[i][2] + self.spikes[i][0]) // 2][
                     (self.spikes[i][3] + self.spikes[i][1]) // 2] %= 2
                 self.maze.array[(self.spikes[i][2] + self.spikes[i][0]) // 2][
                     (self.spikes[i][3] + self.spikes[i][1]) // 2] += 7
-            elif self.ticks == value + 30 or extendedTicks == value + 30 and self.useExtended:
+                if dx > 0 and dy > 0 and useSound:
+                    sfx = choice(self.sfxs)
+                    sfx.set_volume(distance(dx,dy) * 0.05)
+                    sfx.play()
+            dy = max(7 - abs(self.spikes[i][2] - y), 0)
+            dx = max(7 - abs(self.spikes[i][3] - x), 0)
+            if self.ticks == value + 30 or extendedTicks == value + 30 and self.useExtended:
                 self.maze.array[self.spikes[i][2]][self.spikes[i][3]] %= 2
                 self.maze.array[self.spikes[i][2]][self.spikes[i][3]] += 7
+                if dx > 0 and dy > 0 and useSound:
+                    sfx = choice(self.sfxs)
+                    sfx.set_volume(distance(dx, dy) * 0.05)
+                    sfx.play()
         self.draw(screen)
         if self.ticks == self.period - 1:
             self.useExtended = True
 
+class PotionManager:
+    def __init__(self, maze: Maze, uiOffset: int):
+        self.maze = maze
+        self.sprites: list[pg.Surface] = []
+        self.potions: list[tuple[int, int, int]] = []
+        self.placed: int = 0
+        self.offset = uiOffset
+        self.pickupSfx = None
+
+    def loadAssets(self, potionSource: str, size: int, sfxSource: str):
+        self.sprites.append(pg.transform.scale(pg.image.load(potionSource).subsurface((0, 0, 16, 16)), (size, size)))
+        self.sprites.append(pg.transform.scale(pg.image.load(potionSource).subsurface((16, 0, 16, 16)), (size, size)))
+        self.pickupSfx = pg.mixer.Sound(sfxSource)
+
+    def place(self, player: Player, count: int, rareChance: float, spawnChance: float = 0.00002):
+        if random() >= spawnChance: return
+        points: list[tuple[int, int]] = self.maze.staticPoints
+        shuffle(points)
+        for point in points:
+            x: int = player.x // player.w
+            y: int = player.y // player.h
+            if self.maze.array[point[0]][point[1]] != 0 or point in mazeCorners:
+                continue
+            if abs(x - point[1]) < (self.maze.c // 3) and abs(y - point[0]) < (self.maze.r // 3):
+                continue
+            if self.placed < count:
+                self.potions.append((point[0], point[1], 1 if random() <= rareChance else 0))
+                self.maze.array[point[0]][point[1]] = 9 + self.potions[-1][2]
+                self.placed += 1
+                return
+
+    def detectPickup(self, player: Player):
+        x: int = player.x // player.w
+        y: int = player.y // player.h
+        if self.maze.array[y][x] in (9, 10):
+            potion = None
+            for p in self.potions:
+                if (p[0], p[1]) == (y, x):
+                    potion = p
+                    break
+            if potion is not None:
+                self.maze.array[y][x] = 0
+                self.potions.remove(potion)
+                self.pickupSfx.play()
+                self.placed -= 1
+                player.applyPotion(potion[2])
+
+    def draw(self, screen, up_to: int = -1):
+        size: int = self.sprites[0].get_width()
+        for potion in self.potions:
+            if potion[0] <= up_to: continue
+            screen.blit(self.sprites[potion[2]], (potion[1] * size + self.offset, potion[0] * size))
+
+class Bandaid:
+    pass
 
 class UI:
     def __init__(self, screen, level: int, offset: int, itemsSource: str, fontSize: int):
@@ -589,8 +672,10 @@ class UI:
         self.screen = screen
         self.font = pg.font.SysFont("freesans", fontSize)
         self.heart = pg.transform.scale(pg.image.load(itemsSource).subsurface((32, 0, 16, 16)), (offset, offset))
+        self.sprintPotion = pg.transform.scale(pg.image.load(itemsSource).subsurface((0, 0, 16, 16)), (offset, offset))
+        self.noclipPotion = pg.transform.scale(pg.image.load(itemsSource).subsurface((16, 0, 16, 16)), (offset, offset))
 
-    def draw(self, score: int, health: int, level: int = None):
+    def draw(self, score: int, health: int, timers: tuple[int, int] = None, level: int = None, ):
         '''Draws the UI (sidebars, text).'''
         # This took a long time to figure out and this code is pretty messy (especially calculating text height)
         if level is None:
@@ -624,4 +709,15 @@ class UI:
             self.screen.blit(self.heart, (screenWidth - self.offset, self.offset))
         if health > 2:
             self.screen.blit(self.heart, (screenWidth - self.offset, self.offset * 2))
+        if timers is not None:
+            t1 = self.font.render(str(round(timers[0] / 60, 1)), True, "#FFFFFF")
+            t2 = self.font.render(str(round(timers[1] / 60, 1)), True, "#FFFFFF")
+            w1 = t1.get_width() // 2
+            w2 = t2.get_width() // 2
 
+            if timers[0] > 0:
+                self.screen.blit(self.sprintPotion, (screenWidth - self.offset, screenHeight - 3 * self.offset))
+                self.screen.blit(t1, (screenWidth - self.offset // 2 - w1, screenHeight - 2 * self.offset - textHeight))
+            if timers[1] > 0:
+                self.screen.blit(self.noclipPotion, (screenWidth - self.offset, screenHeight - 2 * self.offset))
+                self.screen.blit(t2, (screenWidth - self.offset // 2 - w2, screenHeight - self.offset - textHeight))
