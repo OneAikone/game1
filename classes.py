@@ -2,7 +2,7 @@ import pygame as pg
 from random import shuffle, random, choice
 
 def distance(x, y) -> float:
-    return pow(x*x + y*y, 0.5)
+    return pow(x * x + y * y, 0.5)
 
 class Player:
     def __init__(self, x: int, y: int, w: int, h: int, uiOffset: int = 0) -> None:
@@ -12,26 +12,28 @@ class Player:
         self.h: int = h
         self.health: int = 3
         self.noclip: bool = False
-        self.sprint: bool = True
+        self.sprint: bool = False
         self.noclipTimer: int = 0
         self.sprintTimer: int = 0
         self.uiOffset: int = uiOffset
         self.hurt = False
 
-        self.mode: int = 5
+        self.mode: int = 0
         self.dir: int = 0
 
         self.img = None
         self.sprites: list[pg.Surface] = []
+        self.spriteNum: int = 0
         self.damageSfx = None
 
-    def loadAssets(self, spriteSource: str, sfxSource: str) -> None:
-        _ = pg.transform.scale(pg.image.load(spriteSource), (self.w * 5, self.h * 3))
+    def loadAssets(self, spriteSource: str, spriteNum: int, sfxSource: str) -> None:
+        _ = pg.transform.scale(pg.image.load(spriteSource), (self.w * 15, self.h * 3))
         for y in range(0, self.h * 3, self.h):
             for x in range(0, self.w * 5, self.w):
-                self.sprites.append(_.subsurface((x, y, self.w, self.h)))
+                self.sprites.append(_.subsurface((x + spriteNum * self.w * 5, y, self.w, self.h)))
         self.damageSfx = pg.mixer.Sound(sfxSource)
-        self.damageSfx.set_volume(2)
+        self.damageSfx.set_volume(0.5)
+        self.spriteNum = spriteNum
 
     def draw(self, screen):
         screen.blit(self.sprites[self.dir + self.mode], (self.x + self.uiOffset, self.y))
@@ -53,11 +55,12 @@ class Player:
                 self.y += self.h
                 self.dir = 4
 
-    def checkCollision(self, map: list[list]) -> None:
+    def detectCollision(self, map: list[list], damageCount: int) -> int:
         x: int = self.x // self.w
         y: int = self.y // self.h
         if map[y][x] == 8 and self.hurt is False and self.noclip is False:
             self.damageSfx.play()
+            damageCount += 1
             self.health = max(0, self.health - 1)
             self.hurt = True
         elif map[y][x] != 8 and self.hurt is True:
@@ -78,6 +81,7 @@ class Player:
             self.mode = 0
             if self.sprint:
                 self.mode = 5
+        return damageCount
 
     def applyPotion(self, type: int) -> None:
         if type == 0:
@@ -90,7 +94,6 @@ class Player:
             self.mode = 10
             self.noclip = True
 
-
 class Maze:
     def __init__(self, columns: int, rows: int) -> None:
         self.c: int = columns
@@ -98,7 +101,6 @@ class Maze:
         self.array: list[list] = [[1 for _ in range(columns)] for _ in range(rows)]
         self.staticPoints: list[tuple[int, int]] = [(i, j) for i in range(0, rows, 2) for j in
                                                     range(0, columns, 2)]  # Points that are always empty
-        self.wallSprite = None
         self.directionMap: list[list] = []
         self.sprites: list[pg.Surface] = []
         self.uiOffset = None
@@ -109,26 +111,17 @@ class Maze:
         self.valveSprites: list[pg.Surface] = []
         self.valveW: int = 0
 
+        self.uiX: int = 0
+        self.uiY: int = 0
+
+        self.dx: int = 2
+        self.dy: int = 1
+
+        self.mazeCorners: list[tuple[int, int]] = [(rows - 1, columns - 1), (0, 0), (0, columns - 1), (rows - 1, 0)]
+
     def reset(self):
         '''Sets all tiles to a wall'''
         self.array: list[list] = [[1 for _ in range(self.c)] for _ in range(self.r)]
-
-    def printMaze(self):
-        print()
-        for row in self.array:
-            for tile in row:
-                if tile in (0, 5):
-                    print("  ", end="")
-                elif tile in (1, 6):
-                    print("X ", end="")
-                elif tile == 3:
-                    print("O ", end="")
-                elif tile == 4:
-                    print(". ", end="")
-                else:
-                    print("##", end="")
-            print("|")
-        print()
 
     def loadAssets(self, wallSource: str, size: int, valveSource: str, screen, clock, uiOffset: int = 0):
         '''Loads all assets for the maze to use'''
@@ -161,29 +154,13 @@ class Maze:
             self.clock.tick(60)
             pg.display.flip()
 
-    def loadAnim(self, bgImg: pg.Surface, w: int):
-        for a in range(self.c - 1, -1, -1):
-            for b in range(self.r - 2, -1, -1):
-                self.screen.blit(bgImg, (self.uiOffset, 0))
-                for x in range(self.c):
-                    found = False
-                    for y in range(self.r):
-                        if (x, y) == (a, b):
-                            found = ~found
-                            break
-                        pg.draw.rect(self.screen, "#FFFFFF", (x * w + self.uiOffset, y * w, w, w))
-                    if found: break
-                self.clock.tick((self.r - 1) * self.c // 1.5)
-                pg.display.flip()
-        self.clock.tick(1.5)
-
     def deathAnim(self):
         w = self.sprites[0].get_width()
-        coords: list[tuple[int, int]] = [(i,j) for i in range(6) for j in range(6)]
+        coords: list[tuple[int, int]] = [(i, j) for i in range(6) for j in range(6)]
         w = self.c * w / 6
         shuffle(coords)
-        for x,y in coords:
-            pg.draw.rect(self.screen, "#000000", (x * w + self.uiOffset, y * w, w, w))
+        for x, y in coords:
+            pg.draw.rect(self.screen, "#000000", (x * w + self.uiOffset, y * w, w + 1, w + 1))
             pg.display.flip()
             self.clock.tick(30)
 
@@ -226,6 +203,52 @@ class Maze:
             if valve[3] > up_to:
                 screen.blit(pg.transform.rotate(self.valveSprites[j], valve[5]),
                             (self.valveW * (valve[4] - c) + self.uiOffset, self.valveW * (valve[3] - d)))
+
+    def drawMenu(self, cellSize: int, screen=None):
+        if screen is None: screen = self.screen
+        for r in range(self.uiY // cellSize, min(self.uiY // cellSize + 9, self.r)):
+            for c in range(self.uiX // cellSize, min(self.uiX // cellSize + 9, self.c)):
+                if self.array[r][c] == 1:
+                    screen.blit(pg.transform.scale(self.sprites[self.wallMap[r][c]], (cellSize, cellSize)),
+                                (c * cellSize - self.uiX, r * cellSize - self.uiY))
+        # Again, terrible 20 lines of code
+        for valve in self.valves:
+            i: int = self.array[valve[0]][valve[1]] == 6
+            j: int = (i + 1) % 2
+
+            a: float = 0.0
+            if valve[2] != 0:
+                a = 180 // abs(valve[2]) / 16
+            b: float = 0.0
+            if valve[2] in (0, 180):
+                b = 2 / 16
+            elif valve[2] == 90:
+                b = 1 / 16
+
+            c: float = 0.0
+            if valve[5] != 0:
+                c = 180 // abs(valve[5]) / 16
+            d: float = 0.0
+            if valve[5] in (0, 180):
+                d = 2 / 16
+            elif valve[5] == 90:
+                d = 1 / 16
+
+            screen.blit(pg.transform.rotate(self.valveSprites[i], valve[2]),
+                        (cellSize * (valve[1] - a) - self.uiX, cellSize * (valve[0] - b) - self.uiY))
+
+            screen.blit(pg.transform.rotate(self.valveSprites[j], valve[5]),
+                        (cellSize * (valve[4] - c) - self.uiX, cellSize * (valve[3] - d) - self.uiY))
+
+    def moveMenu(self, rows: int, cellSize: int):
+        self.uiX += self.dx
+        self.uiY += self.dy
+
+        if self.uiX + rows * cellSize > self.c * cellSize or self.uiX < 0:
+            self.dx = -self.dx
+
+        if self.uiY + rows * cellSize > self.r * cellSize or self.uiY < 0:
+            self.dy = -self.dy
 
     def getOffsets(self, coords: tuple[int, int]) -> list[tuple[int, int]]:
         '''Only called by other functions'''
@@ -356,11 +379,8 @@ class Maze:
             self.array[valve[3]][valve[4]] %= 2
             self.array[valve[3]][valve[4]] += 5
 
-mazeCorners: list[tuple[int, int]] = []
-
 class SapphireManager:
     def __init__(self, count: int, maze: Maze, uiOffset: int = 0):
-        global mazeCorners
         self.count: int = count
         self.tempCount: int = count
         self.score = 0
@@ -369,9 +389,8 @@ class SapphireManager:
         self.sprite = None
         self.refillSprite = None
         self.uiOffset: int = uiOffset
-        mazeCorners = [(maze.r - 1, maze.c - 1), (0, 0), (0, maze.c - 1), (maze.r - 1, 0)]
         self.i = 0  # Which corner to spawn the new refill in
-        self.maze.array[mazeCorners[self.i][0]][mazeCorners[self.i][1]] = 4
+        self.maze.array[maze.mazeCorners[self.i][0]][maze.mazeCorners[self.i][1]] = 4
         self.sfx1 = None
         self.sfx2 = None
         self.sfx3 = None
@@ -391,10 +410,10 @@ class SapphireManager:
         for s in self.sapphires:
             if s[0] <= up_to: continue
             screen.blit(self.sprite, (s[1] * size + self.uiOffset, s[0] * size))
-        if self.tempCount == 0 and self.maze.array[mazeCorners[self.i][0]][mazeCorners[self.i][1]] == 4 and \
-                mazeCorners[self.i][1] > up_to:
+        if self.tempCount == 0 and self.maze.array[self.maze.mazeCorners[self.i][0]][self.maze.mazeCorners[self.i][1]] == 4 and \
+                self.maze.mazeCorners[self.i][1] > up_to:
             screen.blit(self.refillSprite,
-                        (mazeCorners[self.i][1] * size + self.uiOffset, mazeCorners[self.i][0] * size))
+                        (self.maze.mazeCorners[self.i][1] * size + self.uiOffset, self.maze.mazeCorners[self.i][0] * size))
 
     def place(self, player: Player, count=None):
         '''Places some amount of sapphires in the maze.
@@ -457,12 +476,11 @@ class SapphireManager:
                 self.score += 1
                 self.sfx3.play()
                 self.i = (self.i + 1) % 4
-                self.maze.array[mazeCorners[self.i][0]][mazeCorners[self.i][1]] = 4
+                self.maze.array[self.maze.mazeCorners[self.i][0]][self.maze.mazeCorners[self.i][1]] = 4
                 self.tempCount = self.count
                 self.maze.flipValves(len(self.maze.valves) - 2)
                 self.place(player)
         return False
-
 
 class SpikeManager:
     def __init__(self, count: int, maze: Maze) -> None:
@@ -487,8 +505,6 @@ class SpikeManager:
             self.sprites.append(pg.transform.scale(pg.image.load(spikeSource).subsurface((x, 0, 16, 16)), (size, size)))
         self.sfxs.append(pg.mixer.Sound(sfx1))
         self.sfxs.append(pg.mixer.Sound(sfx2))
-        for sfx in self.sfxs:
-            sfx.set_volume(0.05)
 
     def draw(self, screen, up_to: int = -1):
         for spike in self.spikes:
@@ -532,7 +548,8 @@ class SpikeManager:
                 shuffle(mods)
                 for mod in mods:
                     if self.maze.array[y + 1][x] == 1 and self.maze.array[y + 3][x] == 1 and self.maze.array[y + 1][
-                        x + mod] == 0 and self.maze.array[y + 2][x + mod] == 0 and self.maze.array[y + 3][x + mod] == 0 and (y + 1,x + mod) not in mazeCorners and (y + 3, x + mod) not in mazeCorners:
+                        x + mod] == 0 and self.maze.array[y + 2][x + mod] == 0 and self.maze.array[y + 3][
+                        x + mod] == 0 and (y + 1, x + mod) not in self.maze.mazeCorners and (y + 3, x + mod) not in self.maze.mazeCorners:
                         points.append([y + 1, x + mod, y + 3, x + mod, (-90 if mod == -1 else 90)])
         for y in range(1, self.maze.r, 2):
             for x in range(-1, self.maze.c - 2, 2):
@@ -543,8 +560,8 @@ class SpikeManager:
                             self.maze.array[y + mod][x + 1] == 0 and
                             self.maze.array[y + mod][x + 2] == 0 and
                             self.maze.array[y + mod][x + 3] == 0 and
-                            (y + mod, x + 1) not in mazeCorners and
-                            (y + mod, x + 3) not in mazeCorners):
+                            (y + mod, x + 1) not in self.maze.mazeCorners and
+                            (y + mod, x + 3) not in self.maze.mazeCorners):
                         points.append([y + mod, x + 1, y + mod, x + 3, (0 if mod == 1 else 180)])
         shuffle(points)
         i: int = -1
@@ -583,7 +600,7 @@ class SpikeManager:
                 self.maze.array[self.spikes[i][0]][self.spikes[i][1]] += 7
                 if dx > 0 and dy > 0 and useSound:
                     sfx = choice(self.sfxs)
-                    sfx.set_volume(distance(dx, dy) * 0.1)
+                    sfx.set_volume(distance(dx, dy) * 0.03)
                     sfx.play()
             dy = max(7 - abs((self.spikes[i][2] + self.spikes[i][0]) // 2 - y), 0)
             dx = max(7 - abs((self.spikes[i][3] + self.spikes[i][1]) // 2 - x), 0)
@@ -594,7 +611,7 @@ class SpikeManager:
                     (self.spikes[i][3] + self.spikes[i][1]) // 2] += 7
                 if dx > 0 and dy > 0 and useSound:
                     sfx = choice(self.sfxs)
-                    sfx.set_volume(distance(dx,dy) * 0.05)
+                    sfx.set_volume(distance(dx, dy) * 0.03)
                     sfx.play()
             dy = max(7 - abs(self.spikes[i][2] - y), 0)
             dx = max(7 - abs(self.spikes[i][3] - x), 0)
@@ -603,7 +620,7 @@ class SpikeManager:
                 self.maze.array[self.spikes[i][2]][self.spikes[i][3]] += 7
                 if dx > 0 and dy > 0 and useSound:
                     sfx = choice(self.sfxs)
-                    sfx.set_volume(distance(dx, dy) * 0.05)
+                    sfx.set_volume(distance(dx, dy) * 0.03)
                     sfx.play()
         self.draw(screen)
         if self.ticks == self.period - 1:
@@ -630,7 +647,7 @@ class PotionManager:
         for point in points:
             x: int = player.x // player.w
             y: int = player.y // player.h
-            if self.maze.array[point[0]][point[1]] != 0 or point in mazeCorners:
+            if self.maze.array[point[0]][point[1]] != 0 or point in self.maze.mazeCorners:
                 continue
             if abs(x - point[1]) < (self.maze.c // 3) and abs(y - point[0]) < (self.maze.r // 3):
                 continue
@@ -663,7 +680,65 @@ class PotionManager:
             screen.blit(self.sprites[potion[2]], (potion[1] * size + self.offset, potion[0] * size))
 
 class Bandaid:
-    pass
+    def __init__(self, uiOffset: int, player: Player, boundaryX: int, boundaryY: int):
+        self.offset = uiOffset
+        self.player = player
+        self.x: int = 0
+        self.y: int = 0
+        self.size: int = None
+        self.sprite = None
+        self.xMax: int = boundaryX
+        self.yMax: int = boundaryY
+        self.placed: bool = False
+        self.dx: int = 0
+        self.sfx = None
+        self.timer: int = 0
+
+    def loadAssets(self, source: str, size: int, sfxSource: str):
+        self.sprite = pg.transform.scale(pg.image.load(source).subsurface((80, 0, 16, 16)), (size, size))
+        self.size = size
+        self.sfx = pg.mixer.Sound(sfxSource)
+        self.sfx.set_volume(3)
+
+    def draw(self, screen):
+        if not self.placed: return
+        screen.blit(self.sprite, (self.x + self.offset, self.y))
+
+    def handleTimer(self):
+        if self.player.health == 3:
+            self.timer = choice(range(10, 30)) * 60
+            return
+
+        if self.timer == 1 and not self.placed:
+            self.placed = True
+            self.x = choice(range(self.size, self.xMax - self.size))
+            self.y = -self.size
+            self.dx = (random() - 0.5) * 2
+            self.timer -= 1
+        elif self.timer == 0 and not self.placed:
+            self.timer = choice(range(10, 30)) * 60
+        elif self.timer > 1:
+            self.timer -= 1
+
+    def move(self):
+        if not self.placed: return
+        self.x += self.dx
+        self.y += 2
+
+        if self.y > self.yMax + self.size:
+            self.placed = False
+
+        if self.x < 0 or self.x > self.xMax - self.size:
+            self.dx = -self.dx
+
+    def detectCollision(self):
+        if not self.placed: return
+        rect = pg.Rect(self.x, self.y, self.size, self.size)
+        playerRect = pg.Rect(self.player.x, self.player.y, self.size, self.size)
+        if rect.colliderect(playerRect):
+            self.player.health += 1
+            self.placed = False
+            self.sfx.play()
 
 class UI:
     def __init__(self, screen, level: int, offset: int, itemsSource: str, fontSize: int):
