@@ -1,8 +1,11 @@
+from random import randint
 from classes import *
 import pygame as pg
 
 pg.mixer.init()
 pg.init()
+
+PYGAME_DETECT_AVX2=1
 
 # All main Sound Effects used in the game
 clearSfx = pg.mixer.Sound("sfx/clear.wav")
@@ -76,7 +79,7 @@ def drawMenu(endScreen: bool = False) -> bool:
     bottomText4 = font.render(f"Best Score: {bestScore}", True, "#FFFFFF")
     playTitle = font.render("-- Play the Game --", True, "#FFFFFF")
     # List of text to draw, making it easier to draw paragraphs of texts at once
-    playTexts: list[str] = ["In order to win, collect sapphires", "and gems. Gems give you points.", "", "You can only collect a gem after", "collecting all sapphires.", "", "You need 4 points to advance", "to the next Level.", "", "Your Final Score is a value from", "0 to 4000 and is determined by", "your overall performance.", "", "Good Luck! :)"]
+    playTexts: list[str] = ["In order to win, collect sapphires", "and gems. Gems give you points.", "", "You can only collect a gem after", "collecting all sapphires.", "", "You need 2-3 points to advance", "to the next Level.", "", "Your Final Score is a value from", "0 to 4000 and is determined by", "your overall performance.", "", "Good Luck! :)"]
     # Stgs = Settings
     stgsTitle = font.render("- Player Settings -", True, "#FFFFFF")
     stgsTexts: list[str] = ["Customize the appearance of", "the player sprite.", ""]
@@ -259,7 +262,6 @@ def playLevel(level: int) -> int:
     # Places valves in the maze
     maze.placeValves(level * 2)
 
-
     # Initialises Spikes if the level isn't the first one
     if level > 1:
         spikes = SpikeManager(min(level,3) * 2, maze)
@@ -267,14 +269,14 @@ def playLevel(level: int) -> int:
         spikes.place()
 
     # Initialises the sapphire manager
-    sapphires = SapphireManager(min(2 + level, 5), maze, uiOffset)
+    sapphires = SapphireManager(maze, min(2 + level, 5), randint(2,3), uiOffset)
     sapphires.loadAssets("sprites/items.png", cellSize, "sfx/coin.wav", "sfx/coin2.mp3", "sfx/score.wav")
     # Places the sapphires such that no sapphire is very close to the player
     sapphires.place(player)
 
     # Initialises potions for levels 3 and 4
     if level > 2:
-        potions = PotionManager(maze, uiOffset)
+        potions = PotionManager(maze, uiOffset, level==4)
         potions.loadAssets("sprites/items.png", cellSize, "sfx/potion.wav")
 
     # Initialises the bandaid if the level isn't the first one
@@ -302,7 +304,7 @@ def playLevel(level: int) -> int:
         overlaySurface.fill((0,0,0,240))
 
     # maze.printMaze()
-    ui.draw(0, 3, level)
+    ui.draw(0, sapphires.gemCount,3, level)
     player.draw(screen)
     screen.blit(bgImg, (uiOffset, 0))
     if level == 4:
@@ -336,7 +338,7 @@ def playLevel(level: int) -> int:
                 return 2
 
         # Runs sapphire pickup detection logic and returns True if the player cleared the entire Level
-        status = sapphires.detectPickup(player, 4)
+        status = sapphires.detectPickup(player)
         # Runs player collision with Spikes, handles the Potion timers, increments the damage count if the player touches spikes
         damageCount = player.detectCollision(maze.array, damageCount)
 
@@ -357,14 +359,14 @@ def playLevel(level: int) -> int:
 
         if level > 2:
             potions.draw(screen)
-            # Every frame (60 times per second) there is a 1/1500 chance of spawning a potion somewhere, and that potion has a 30% chance to give noclip
-            potions.place(player, 2, 0.3, 1 / 1500)
+            # Every frame (60 times per second) there is a 1/1000 chance of spawning a potion somewhere
+            potions.place(player, 2, 1 / 1000)
             potions.detectPickup(player)
-        if level == 4:
+        if level == 4 and not player.vision:
             screen.blit(overlaySurface, (uiOffset, 0))
         player.draw(screen)
         # Handles the darkness effect
-        if level == 4:
+        if level == 4 and not player.vision:
             l: int = cellSize * rows
             # Draws the main light on top of the player
             screen.blit(playerLight, (player.x - l//2 + cellSize//2 + uiOffset, player.y - l//2 + cellSize//2))
@@ -378,7 +380,7 @@ def playLevel(level: int) -> int:
             if sapphires.tempCount == 0:
                 screen.blit(smallLight, (maze.mazeCorners[sapphires.i][1] * cellSize - l//2 + cellSize//2 + uiOffset, maze.mazeCorners[sapphires.i][0] * cellSize - l//2 + cellSize//2))
 
-        ui.draw(sapphires.score, player.health, level, (player.sprintTimer, player.noclipTimer))
+        ui.draw(sapphires.score, sapphires.gemCount, player.health, level, (player.sprintTimer, player.noclipTimer, player.visionTimer))
 
         # Death logic
         if player.health == 0:
@@ -395,13 +397,12 @@ def playLevel(level: int) -> int:
         if status:
             maxTime: int = 0
             match level:
-                case 1: maxTime = 60 * 60 # 1 minute
-                case 2 | 3: maxTime = 120 * 60 # 2 minutes
-                case 4: maxTime = 140 * 60 # 2 minutes, 20 seconds
+                case 1: maxTime = 60 * 20 * sapphires.gemCount # 40-60 seconds
+                case 2 | 3 | 4: maxTime = 120 * 20 * sapphires.gemCount # 80-120 seconds
             # Implementation for time penalty and damage penalty
             score -= min(max(0, timer - maxTime) // 300 * 30 + damageCount * 50, 1000)
 
-            # print(f"{score} ({timer}/{maxTime}) [{timer//3600}:{(timer//60) % 60} / {maxTime//3600}:{(maxTime//60) % 60}]")
+            print(f"{score} ({timer}/{maxTime}) [{timer//3600}:{(timer//60) % 60} / {maxTime//3600}:{(maxTime//60) % 60}]")
             pg.mixer.music.fadeout(2)
             clearSfx.play()
             maze.clearAnim()

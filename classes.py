@@ -23,9 +23,13 @@ class Player:
         # Boolean values representing active potion effects
         self.noclip: bool = False
         self.sprint: bool = False
+        self.vision: bool = False
+        self.justPickedUpSprint: bool = False
+
         # Timers representing how long until an effect runs out
         self.noclipTimer: int = 0
         self.sprintTimer: int = 0
+        self.visionTimer: int = 0
         # The offset caused by the sidebar on the left
         self.uiOffset: int = uiOffset
 
@@ -60,8 +64,9 @@ class Player:
         x: int = self.x // self.w
         y: int = self.y // self.h
         # Speed potion implementation
-        if event.type == pg.KEYDOWN or (self.sprint and event.type == pg.KEYUP):
+        if event.type == pg.KEYDOWN or (self.sprint and event.type == pg.KEYUP and not self.justPickedUpSprint):
             # The IF statements check for: Valid Key press, No Boundary crossing, No wall entry (unless noclip potion is active)
+            self.justPickedUpSprint = False
             if event.key == pg.K_a and x > 0 and (mazeArray[y][x - 1] not in (1, 6) or self.noclip):
                 self.x -= self.w
                 self.dir = 2
@@ -96,6 +101,8 @@ class Player:
             self.sprintTimer -= 1
         if self.noclipTimer > 0:
             self.noclipTimer -= 1
+        if self.visionTimer > 0:
+            self.visionTimer -= 1
 
         # Logic for potions ending
         if self.sprintTimer == 0 and self.sprint:
@@ -108,19 +115,25 @@ class Player:
             self.mode = 0
             if self.sprint:
                 self.mode = 5
+        if self.visionTimer == 0 and self.vision:
+            self.vision = False
         return damageCount
 
     def applyPotion(self, potionType: int) -> None:
-        '''Applies a potion effect (0 = sprint, 1 = noclip).'''
+        '''Applies a potion effect (0 = sprint, 1 = noclip, 2 = vision).'''
         if potionType == 0:
             self.sprintTimer = 60 * 15 # 15 seconds
             if not self.noclip:
                 self.mode = 5
             self.sprint = True
+            self.justPickedUpSprint = True
         if potionType == 1:
             self.noclipTimer = 60 * 5 # 5 seconds
             self.mode = 10
             self.noclip = True
+        if potionType == 2:
+            self.visionTimer = 60 * 7 # 7 seconds
+            self.vision = True
 
 class Maze:
     '''This complex class implements the in-game Maze.'''
@@ -130,7 +143,7 @@ class Maze:
         self.r: int = rows
 
         # The maze is stored as a 2D grid of numbers
-        # 0 - nothing | 1 - wall | 3 - sapphire | 4 - gem | 5 - closed Valve | 6 - open Valve | 7 - deactivated Spikes | 8 - active Spikes | 9 - sprint potion | 10 - noclip potion
+        # 0 - nothing | 1 - wall | 3 - sapphire | 4 - gem | 5 - closed Valve | 6 - open Valve | 7 - deactivated Spikes | 8 - active Spikes | 9 - sprint potion | 10 - noclip potion | 11 - vision potion
         self.array: list[list] = [[1 for _ in range(columns)] for _ in range(rows)]
         # Points that are always empty, no matter the generated maze
         self.staticPoints: list[tuple[int, int]] = [(i, j) for i in range(0, rows, 2) for j in
@@ -411,11 +424,14 @@ class Maze:
 
 class SapphireManager:
     '''This class defines the manager class for sapphires in the maze.'''
-    def __init__(self, count: int, maze: Maze, uiOffset: int = 0):
+    def __init__(self, maze: Maze, count: int, gemCount: int, uiOffset: int = 0):
         '''Initialises the sapphires by providing the Max count, the Maze, and the ui offset.'''
 
         # Count - how many can be placed
         self.count: int = count
+
+        # How many green gems the player needs to collect
+        self.gemCount = gemCount
         # TempCount - how many are currently placed. Equal to 0 -> player picked up all sapphires
         self.tempCount: int = count
 
@@ -430,16 +446,19 @@ class SapphireManager:
         self.refillSprite = None
         self.uiOffset: int = uiOffset
         self.i = 0  # Which corner to spawn the new gem in
+        shuffle(maze.mazeCorners)
         self.maze.array[maze.mazeCorners[self.i][0]][maze.mazeCorners[self.i][1]] = 4
         self.sfx1 = None # Sapphire pickup
         self.sfx2 = None # Last sapphite pickup
         self.sfx3 = None # Gem pickup
 
+
+
     def loadAssets(self, spriteSource: str, size: int, sfx1: str, sfx2: str, sfx3: str):
         '''Loads all assets: the sapphire and gem sprites, the pixel size, the pickup sfx, the last pickup sfx, and the gem pickup sfx.'''
-        image = pg.transform.scale(pg.image.load(spriteSource), (6 * size, size))
-        self.sprite = image.subsurface((size * 3, 0, size, size))
-        self.refillSprite = image.subsurface((size * 4, 0, size, size))
+        image = pg.transform.scale(pg.image.load(spriteSource), (7 * size, size))
+        self.sprite = image.subsurface((size * 4, 0, size, size))
+        self.refillSprite = image.subsurface((size * 5, 0, size, size))
         self.sfx1 = pg.mixer.Sound(sfx1)
         self.sfx1.set_volume(0.5)
         self.sfx2 = pg.mixer.Sound(sfx2)
@@ -497,7 +516,7 @@ class SapphireManager:
             else:
                 self.tempCount -= 1
 
-    def detectPickup(self, player: Player, maxRefills: int) -> bool:
+    def detectPickup(self, player: Player) -> bool:
         '''Checks for player interaction with sapphires.'''
         x: int = player.x // player.w
         y: int = player.y // player.h
@@ -514,7 +533,7 @@ class SapphireManager:
         # Gem pickup logic
         if self.maze.array[y][x] == 4 and self.tempCount < 1:
             self.maze.array[y][x] = 0
-            if self.score > maxRefills - 2:
+            if self.score > self.gemCount - 2:
                 self.score += 1
                 # Player picked up all gems
                 return True
@@ -715,8 +734,8 @@ class SpikeManager:
 
 class PotionManager:
     '''This class manages potion spawning and collision.'''
-    def __init__(self, maze: Maze, uiOffset: int):
-        '''Initialise the class by providing the maze and ui offset.'''
+    def __init__(self, maze: Maze, uiOffset: int, includeNightVision: bool = False):
+        '''Initialise the class by providing the maze and ui offset. includeNightVision causes the night vision potion to spawn (level 4 only)'''
         self.maze = maze
         self.sprites: list[pg.Surface] = []
         # Format: Y coordinate of potion, X coordinate of potion, potion type (either 0 or 1)
@@ -724,14 +743,16 @@ class PotionManager:
         self.placed: int = 0
         self.offset = uiOffset
         self.pickupSfx = None
+        self.potion3: bool = includeNightVision
 
     def loadAssets(self, potionSource: str, size: int, sfxSource: str):
         '''Load assets: the potion sprites, pixel size and pickup sfx.'''
         self.sprites.append(pg.transform.scale(pg.image.load(potionSource).subsurface((0, 0, 16, 16)), (size, size)))
         self.sprites.append(pg.transform.scale(pg.image.load(potionSource).subsurface((16, 0, 16, 16)), (size, size)))
+        self.sprites.append(pg.transform.scale(pg.image.load(potionSource).subsurface((32, 0, 16, 16)), (size, size)))
         self.pickupSfx = pg.mixer.Sound(sfxSource)
 
-    def place(self, player: Player, count: int, rareChance: float, spawnChance: float = 0.00002):
+    def place(self, player: Player, count: int, spawnChance: float = 0.00002):
         '''Places count potions, far away from the player.'''
         # The function simply returns if it doesn't pass the check
         if random() >= spawnChance: return
@@ -749,7 +770,7 @@ class PotionManager:
                 continue
             # Potion placement logic
             if self.placed < count:
-                self.potions.append((point[0], point[1], 1 if random() <= rareChance else 0))
+                self.potions.append((point[0], point[1], choice((0,1,2 if self.potion3 else 0))))
                 self.maze.array[point[0]][point[1]] = 9 + self.potions[-1][2]
                 self.placed += 1
                 return
@@ -758,7 +779,7 @@ class PotionManager:
         '''Detects and handles player interaction with potions.'''
         x: int = player.x // player.w
         y: int = player.y // player.h
-        if self.maze.array[y][x] in (9, 10):
+        if self.maze.array[y][x] in (9, 10, 11):
             potion = None
             for p in self.potions:
                 if (p[0], p[1]) == (y, x):
@@ -803,7 +824,7 @@ class Bandaid:
 
     def loadAssets(self, source: str, size: int, sfxSource: str):
         '''Loads the bandaid sprite, its size, and the pickup sfx.'''
-        self.sprite = pg.transform.scale(pg.image.load(source).subsurface((80, 0, 16, 16)), (size, size))
+        self.sprite = pg.transform.scale(pg.image.load(source).subsurface((96, 0, 16, 16)), (size, size))
         self.size = size
         self.sfx = pg.mixer.Sound(sfxSource)
         self.sfx.set_volume(3)
@@ -864,11 +885,12 @@ class UI:
         self.offset = offset
         self.screen = screen
         self.font = pg.font.SysFont("freesans", fontSize)
-        self.heart = pg.transform.scale(pg.image.load(itemsSource).subsurface((32, 0, 16, 16)), (offset, offset))
+        self.heart = pg.transform.scale(pg.image.load(itemsSource).subsurface((48, 0, 16, 16)), (offset, offset))
         self.sprintPotion = pg.transform.scale(pg.image.load(itemsSource).subsurface((0, 0, 16, 16)), (offset, offset))
         self.noclipPotion = pg.transform.scale(pg.image.load(itemsSource).subsurface((16, 0, 16, 16)), (offset, offset))
+        self.visionPotion = pg.transform.scale(pg.image.load(itemsSource).subsurface((32, 0, 16, 16)), (offset, offset))
 
-    def draw(self, score: int, health: int, level: int, timers: tuple[int, int] = None):
+    def draw(self, score: int, maxScore: int, health: int, level: int, timers: tuple[int, int, int] = None):
         '''Draws the UI (sidebars, text, timers).'''
         screenHeight: int = self.screen.get_height()
         screenWidth: int = self.screen.get_width()
@@ -885,7 +907,7 @@ class UI:
             t = self.font.render(char, True, "#FFFFFF")
             self.screen.blit(t, (self.offset // 2 - t.get_width() // 2, h))
             h += textHeight
-        text = f"{score}-4"
+        text = f"{score}-{maxScore}"
         h = screenHeight // 2 - (len(text)) * textHeight // 2
         for char in text:
             if char == "-":
@@ -905,14 +927,18 @@ class UI:
 
         # Timers logic
         if timers is not None:
-            t1 = self.font.render(str(round(timers[0] / 60, 1)), True, "#FFFFFF")
-            t2 = self.font.render(str(round(timers[1] / 60, 1)), True, "#FFFFFF")
-            w1 = t1.get_width() // 2
-            w2 = t2.get_width() // 2
-
             if timers[0] > 0:
+                t1 = self.font.render(str(round(timers[0] / 60, 1)), True, "#FFFFFF")
+                w1 = t1.get_width() // 2
                 self.screen.blit(self.sprintPotion, (screenWidth - self.offset, screenHeight - 3 * self.offset))
                 self.screen.blit(t1, (screenWidth - self.offset // 2 - w1, screenHeight - 2 * self.offset - textHeight))
             if timers[1] > 0:
+                t2 = self.font.render(str(round(timers[1] / 60, 1)), True, "#FFFFFF")
+                w2 = t2.get_width() // 2
                 self.screen.blit(self.noclipPotion, (screenWidth - self.offset, screenHeight - 2 * self.offset))
                 self.screen.blit(t2, (screenWidth - self.offset // 2 - w2, screenHeight - self.offset - textHeight))
+            if timers[2] > 0:
+                t3 = self.font.render(str(round(timers[2] / 60, 1)), True, "#FFFFFF")
+                w3 = t3.get_width() // 2
+                self.screen.blit(self.visionPotion, (screenWidth - self.offset, screenHeight - 1 * self.offset))
+                self.screen.blit(t3, (screenWidth - self.offset // 2 - w3, screenHeight - textHeight))
